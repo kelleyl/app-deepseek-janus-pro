@@ -12,7 +12,6 @@ from mmif import Mmif, View, Document, AnnotationTypes, DocumentTypes
 from mmif.utils import video_document_helper as vdh
 from transformers import AutoModelForCausalLM
 from janus.models import VLChatProcessor
-from janus.utils.io import load_pil_images
 import torch
 
 
@@ -23,7 +22,13 @@ class JanusProCaptioner(ClamsApp):
         self.vl_chat_processor = VLChatProcessor.from_pretrained(model_path)
         self.tokenizer = self.vl_chat_processor.tokenizer
         self.vl_gpt = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
-        self.vl_gpt = self.vl_gpt.to(torch.bfloat16).cuda().eval()
+        
+        # Check if GPU supports bfloat16
+        if torch.cuda.is_available() and torch.cuda.get_device_capability(0) >= (7, 0):
+            self.vl_gpt = self.vl_gpt.to(torch.bfloat16).cuda().eval()
+        else:
+            self.vl_gpt = self.vl_gpt.to(torch.float16).cuda().eval()
+        
         super().__init__()
 
     def _appmetadata(self) -> AppMetadata:
@@ -63,11 +68,12 @@ class JanusProCaptioner(ClamsApp):
                     ]
                     all_conversations.append(conversation)
 
-                all_pil_images = [load_pil_images(conv) for conv in all_conversations]
+                # Use the already loaded PIL images directly
+                all_pil_images = images_batch
 
                 prepare_inputs = self.vl_chat_processor(conversations=all_conversations, images=all_pil_images, force_batchify=True).to(self.vl_gpt.device)
-                inputs_embeds = self.vl_gpt.language_model.prepare_inputs_embeds(**prepare_inputs)
-                outputs = self.vl_gpt.language_model.generate(
+                inputs_embeds = self.vl_gpt.prepare_inputs_embeds(**prepare_inputs)
+                outputs = self.vl_gpt.generate(
                     inputs_embeds=inputs_embeds,
                     attention_mask=prepare_inputs.attention_mask,
                     pad_token_id=self.tokenizer.eos_token_id,
@@ -84,6 +90,9 @@ class JanusProCaptioner(ClamsApp):
                     alignment = new_view.new_annotation(AnnotationTypes.Alignment)
                     alignment.add_property("source", annotation['source'])
                     alignment.add_property("target", text_document.long_id)
+            except Exception as e:
+                self.logger.error(f"Error processing batch: {e}")
+                raise
             finally:
                 torch.cuda.empty_cache()
 
@@ -107,16 +116,22 @@ class JanusProCaptioner(ClamsApp):
             print("input_context: ", input_context)
             app_uri = config['context_config']['timeframe']['app_uri']
             all_views = mmif.get_all_views_contain(AnnotationTypes.TimeFrame)
+            timeframes = []
             for view in all_views:
                 print(view.metadata.app)
                 if app_uri in view.metadata.app:
                     print("found view with app_uri: ", app_uri)
                     timeframes = view.get_annotations(AnnotationTypes.TimeFrame)
                     break
+            if not timeframes:
+                raise ValueError(f"No TimeFrame annotations found for app_uri: {app_uri}")
             label_mapping = config['context_config']['timeframe'].get('label_mapping', {})
         elif input_context == 'fixed_window':
             print("input_context: ", input_context)
-            video_doc = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
+            video_docs = mmif.get_documents_by_type(DocumentTypes.VideoDocument)
+            if not video_docs:
+                raise ValueError("No VideoDocument found in MMIF.")
+            video_doc = video_docs[0]
             window_duration = config['context_config']['fixed_window']['window_duration']
             stride = config['context_config']['fixed_window']['stride']
             fps = float(video_doc.get_property('fps'))
