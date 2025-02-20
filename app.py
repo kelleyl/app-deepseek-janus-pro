@@ -62,18 +62,19 @@ class JanusProCaptioner(ClamsApp):
             try:
                 all_conversations = []
                 for prompt, image in zip(prompts_batch, images_batch):
-                    conversation = [
-                        {"role": "<|User|>", "content": f"<image_placeholder>\n{prompt}", "images": [image]},
-                        {"role": "<|Assistant|>", "content": ""}
-                    ]
-                    all_conversations.append(conversation)
+                    # conversation = [
+                    #     {"role": "<|User|>", "content": f"<image_placeholder>\n{prompt}", "images": [image]},
+                    #     {"role": "<|Assistant|>", "content": ""}
+                    # ]
+                    prompt = f"<image_placeholder>\n{prompt}"
+                    all_conversations.append(prompt)
 
                 # Use the already loaded PIL images directly
                 all_pil_images = images_batch
 
-                prepare_inputs = self.vl_chat_processor(conversations=all_conversations, images=all_pil_images, force_batchify=True).to(self.vl_gpt.device)
+                prepare_inputs = self.vl_chat_processor(prompt=all_conversations[0], images=all_pil_images, force_batchify=True).to(self.vl_gpt.device)
                 inputs_embeds = self.vl_gpt.prepare_inputs_embeds(**prepare_inputs)
-                outputs = self.vl_gpt.generate(
+                outputs = self.vl_gpt.language_model.generate(
                     inputs_embeds=inputs_embeds,
                     attention_mask=prepare_inputs.attention_mask,
                     pad_token_id=self.tokenizer.eos_token_id,
