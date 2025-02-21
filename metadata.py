@@ -23,11 +23,11 @@ def appmetadata() -> AppMetadata:
     
     # first set up some basic information
     metadata = AppMetadata(
-        name="LLaVA Captioner",
-        description="Applies LLaVA v1.6 Mistral-7B to video frames for image captioning.",
+        name="DeepSeek Janus Pro",
+        description="Applies DeepSeek Janus Pro model to video frames for image captioning.",
         app_license="Apache 2.0",
-        identifier="llava-captioner",
-        url="https://github.com/clamsproject/app-llava-captioner"
+        identifier="deepseek-janus-pro",
+        url="https://github.com/clamsproject/app-deepseek-janus-pro"
     )
 
     # and then add I/O specifications: an app must have at least one input and one output
